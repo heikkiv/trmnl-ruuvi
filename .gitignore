@@ -27,6 +27,9 @@ config.py
 *.swp
 *.swo
 
+# Claude AI tool settings
+.claude/
+
 # OS specific files
 .DS_Store
 Thumbs.db
