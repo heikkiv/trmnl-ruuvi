@@ -1,0 +1,32 @@
+# Python virtual environment
+env/
+venv/
+ENV/
+.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+log.txt
+updater.log
+
+# Configuration file with sensitive information
+config.py
+
+# Local development settings
+.env
+.env.local
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db

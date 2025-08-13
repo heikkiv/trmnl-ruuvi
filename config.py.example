@@ -1,0 +1,17 @@
+"""
+Configuration file for the Ruuvi measurement updater.
+Copy this file to config.py and update with your credentials.
+"""
+
+# TRMNL API endpoint
+trmnl_url = 'https://usetrmnl.com/api/custom_plugins/your-plugin-id'
+
+# Ruuvi Network API configuration
+ruuvi_token = 'your-ruuvi-token'
+ruuvi_api_url = 'https://network.ruuvi.com/sensors-dense?sharedToMe=true&measurements=true&alerts=true&sharedToOthers=true'
+
+# Update interval in seconds (default: 15 minutes)
+update_interval = 60 * 15
+
+# Retry interval in seconds when an exception occurs
+retry_interval = 60
