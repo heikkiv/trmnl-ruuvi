@@ -48,12 +48,16 @@ def update_measurements_trmnl(logger):
     while True:
         try:
             sensors = get_measurements()
+            #logger.info(sensors)
             data = {
                 "merge_variables": {
                     'outside': sensors['Terrace']['temperature'],
                     'livingroom': sensors['Living room']['temperature'],
                     'bedroom': sensors['Bedroom']['temperature'],
-                    'study': sensors['Outside']['temperature']
+                    'study': sensors['Outside']['temperature'],
+                    'mokki_outside': sensors['Mökki ulkona']['temperature'],
+                    'mokki_inside': sensors['Mökki olohuone']['temperature'],
+                    'mokki_basement': sensors['Mökki kellari']['temperature']
                 }
             }
             logger.info(data)
