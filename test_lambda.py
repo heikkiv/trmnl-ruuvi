@@ -1,7 +1,7 @@
 import json
 import os
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # Set required env vars before importing the module, which reads them at load time
 os.environ.setdefault("RUUVI_TOKEN", "test-token")
@@ -10,10 +10,13 @@ os.environ.setdefault("PLUGIN_NAME", "Test Plugin")
 import lambda_function
 
 SAMPLE_SENSORS = {
-    "Terrace": {"temperature": 5.23},
-    "Living room": {"temperature": 21.5},
-    "Bedroom": {"temperature": 19.0},
-    "Outside": {"temperature": 18.5},
+    "Terrace":          {"temperature": 5.23},
+    "Living room":      {"temperature": 21.5},
+    "Bedroom":          {"temperature": 19.0},
+    "Outside":          {"temperature": 18.5},
+    "Mökki ulkona":     {"temperature": 3.1},
+    "Mökki olohuone":   {"temperature": 17.8},
+    "Mökki kellari":    {"temperature": 10.4},
 }
 
 
@@ -31,36 +34,77 @@ class TestFmt(unittest.TestCase):
         self.assertEqual(lambda_function.fmt(0.0), "0.0°")
 
 
-class TestBuildMarkup(unittest.TestCase):
+class TestGetTemplateVars(unittest.TestCase):
     def setUp(self):
-        self.markup = lambda_function.build_markup(SAMPLE_SENSORS)
+        self.vars = lambda_function.get_template_vars(SAMPLE_SENSORS)
 
-    def test_outside_temperature(self):
-        self.assertIn("5.2°", self.markup)
+    def test_all_keys_present(self):
+        expected = {"outside", "livingroom", "bedroom", "study",
+                    "mokki_outside", "mokki_inside", "mokki_basement",
+                    "plugin_name", "updated_at"}
+        self.assertEqual(set(self.vars.keys()), expected)
 
-    def test_livingroom_temperature(self):
-        self.assertIn("21.5°", self.markup)
-
-    def test_bedroom_temperature(self):
-        self.assertIn("19.0°", self.markup)
-
-    def test_study_temperature(self):
-        self.assertIn("18.5°", self.markup)
+    def test_values_are_formatted(self):
+        self.assertEqual(self.vars["outside"], "5.2°")
+        self.assertEqual(self.vars["livingroom"], "21.5°")
+        self.assertEqual(self.vars["mokki_outside"], "3.1°")
 
     def test_plugin_name(self):
-        self.assertIn("Test Plugin", self.markup)
+        self.assertEqual(self.vars["plugin_name"], "Test Plugin")
 
-    def test_no_unreplaced_placeholders(self):
-        self.assertNotIn("{{", self.markup)
 
-    def test_is_valid_html_fragment(self):
-        self.assertIn("<div", self.markup)
-        self.assertIn("</div>", self.markup)
+class TestBuildMarkup(unittest.TestCase):
+    def _build(self, template):
+        return lambda_function.build_markup(template, SAMPLE_SENSORS)
+
+    def test_half_vertical_no_placeholders(self):
+        self.assertNotIn("{{", self._build(lambda_function.MARKUP_HALF_VERTICAL))
+
+    def test_half_horizontal_no_placeholders(self):
+        self.assertNotIn("{{", self._build(lambda_function.MARKUP_HALF_HORIZONTAL))
+
+    def test_full_no_placeholders(self):
+        self.assertNotIn("{{", self._build(lambda_function.MARKUP_FULL))
+
+    def test_quarter_no_placeholders(self):
+        self.assertNotIn("{{", self._build(lambda_function.MARKUP_QUARTER))
+
+    def test_half_vertical_home_temps(self):
+        markup = self._build(lambda_function.MARKUP_HALF_VERTICAL)
+        self.assertIn("5.2°", markup)    # outside
+        self.assertIn("21.5°", markup)   # livingroom
+        self.assertIn("19.0°", markup)   # bedroom
+        self.assertIn("18.5°", markup)   # study
+
+    def test_full_home_and_cottage_temps(self):
+        markup = self._build(lambda_function.MARKUP_FULL)
+        self.assertIn("5.2°", markup)    # outside
+        self.assertIn("21.5°", markup)   # livingroom
+        self.assertIn("3.1°", markup)    # mokki_outside
+        self.assertIn("17.8°", markup)   # mokki_inside
+        self.assertIn("10.4°", markup)   # mokki_basement
+
+    def test_quarter_key_temps(self):
+        markup = self._build(lambda_function.MARKUP_QUARTER)
+        self.assertIn("5.2°", markup)    # outside
+        self.assertIn("21.5°", markup)   # livingroom
+
+    def test_half_horizontal_home_temps(self):
+        markup = self._build(lambda_function.MARKUP_HALF_HORIZONTAL)
+        for temp in ("5.2°", "21.5°", "19.0°", "18.5°"):
+            self.assertIn(temp, markup)
+
+    def test_plugin_name_in_all_views(self):
+        for template in (lambda_function.MARKUP_FULL,
+                         lambda_function.MARKUP_HALF_HORIZONTAL,
+                         lambda_function.MARKUP_HALF_VERTICAL,
+                         lambda_function.MARKUP_QUARTER):
+            with self.subTest(template=template[:30]):
+                self.assertIn("Test Plugin", self._build(template))
 
 
 class TestGetMeasurements(unittest.TestCase):
     def _make_api_response(self, sensors):
-        """Build a minimal Ruuvi API response for the given list of (name, hex_payload) tuples."""
         return {
             "data": {
                 "sensors": [
@@ -86,8 +130,7 @@ class TestGetMeasurements(unittest.TestCase):
     @patch("lambda_function.ruuvi_decoders.Df5Decoder")
     @patch("lambda_function.requests.get")
     def test_decodes_sensor_data(self, mock_get, mock_decoder_class):
-        decoded = {"temperature": 21.5, "humidity": 50}
-        mock_decoder_class.return_value.decode_data.return_value = decoded
+        mock_decoder_class.return_value.decode_data.return_value = {"temperature": 21.5}
         mock_get.return_value.json.return_value = self._make_api_response(
             [("Terrace", "AABBCC")]
         )
@@ -131,33 +174,42 @@ class TestGetMeasurements(unittest.TestCase):
 
 class TestHandler(unittest.TestCase):
     @patch("lambda_function.get_measurements", return_value=SAMPLE_SENSORS)
-    def test_returns_200(self, _):
-        response = lambda_function.handler({}, None)
-        self.assertEqual(response["statusCode"], 200)
+    def setUp(self, _):
+        self.response = lambda_function.handler({}, None)
+        self.body = json.loads(self.response["body"])
 
-    @patch("lambda_function.get_measurements", return_value=SAMPLE_SENSORS)
-    def test_content_type_header(self, _):
-        response = lambda_function.handler({}, None)
-        self.assertEqual(response["headers"]["Content-Type"], "application/json")
+    def test_returns_200(self):
+        self.assertEqual(self.response["statusCode"], 200)
 
-    @patch("lambda_function.get_measurements", return_value=SAMPLE_SENSORS)
-    def test_body_is_valid_json(self, _):
-        response = lambda_function.handler({}, None)
-        body = json.loads(response["body"])
-        self.assertIsInstance(body, dict)
+    def test_content_type_header(self):
+        self.assertEqual(self.response["headers"]["Content-Type"], "application/json")
 
-    @patch("lambda_function.get_measurements", return_value=SAMPLE_SENSORS)
-    def test_body_contains_markup_key(self, _):
-        response = lambda_function.handler({}, None)
-        body = json.loads(response["body"])
-        self.assertIn("markup", body)
+    def test_body_contains_all_markup_keys(self):
+        self.assertIn("markup", self.body)
+        self.assertIn("markup_half_horizontal", self.body)
+        self.assertIn("markup_half_vertical", self.body)
+        self.assertIn("markup_quarter", self.body)
 
-    @patch("lambda_function.get_measurements", return_value=SAMPLE_SENSORS)
-    def test_markup_contains_sensor_temperatures(self, _):
-        response = lambda_function.handler({}, None)
-        body = json.loads(response["body"])
-        self.assertIn("5.2°", body["markup"])
-        self.assertIn("21.5°", body["markup"])
+    def test_full_markup_has_cottage_temps(self):
+        self.assertIn("3.1°", self.body["markup"])   # mokki_outside
+        self.assertIn("17.8°", self.body["markup"])  # mokki_inside
+        self.assertIn("10.4°", self.body["markup"])  # mokki_basement
+
+    def test_half_vertical_markup_has_home_temps(self):
+        markup = self.body["markup_half_vertical"]
+        for temp in ("5.2°", "21.5°", "19.0°", "18.5°"):
+            self.assertIn(temp, markup)
+
+    def test_quarter_markup_excludes_cottage_temps(self):
+        markup = self.body["markup_quarter"]
+        self.assertIn("5.2°", markup)
+        self.assertIn("21.5°", markup)
+        self.assertNotIn("3.1°", markup)
+
+    def test_no_placeholders_in_any_markup(self):
+        for key in ("markup", "markup_half_horizontal", "markup_half_vertical", "markup_quarter"):
+            with self.subTest(key=key):
+                self.assertNotIn("{{", self.body[key])
 
     @patch("lambda_function.get_measurements", side_effect=Exception("Ruuvi API down"))
     def test_propagates_ruuvi_errors(self, _):

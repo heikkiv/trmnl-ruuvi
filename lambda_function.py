@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import datetime
 import requests
 import ruuvi_decoders
 
@@ -14,7 +15,81 @@ RUUVI_API_URL = os.environ.get(
 )
 PLUGIN_NAME = os.environ.get("PLUGIN_NAME", "Ruuvi")
 
-MARKUP_TEMPLATE = """\
+# ---------------------------------------------------------------------------
+# Markup templates
+# ---------------------------------------------------------------------------
+
+MARKUP_FULL = """\
+<div class="layout gap--space-between">
+  <div class="layout layout--col gap--space-between">
+    <div class="item">
+      <div class="meta"></div>
+      <div class="content">
+        <span class="value value--tnums value--xxlarge" data-value-format="true">{{outside}}</span>
+        <span class="label">Ulkona</span>
+      </div>
+    </div>
+    <div class="w-full b-h-gray-5"></div>
+    <div class="item">
+      <div class="meta"></div>
+      <div class="content">
+        <span class="value value--tnums value--large">{{livingroom}}</span>
+        <span class="label">Olohuone</span>
+      </div>
+    </div>
+    <div class="w-full b-h-gray-5"></div>
+    <div class="grid grid--cols-2">
+      <div class="item">
+        <div class="meta"></div>
+        <div class="content">
+          <span class="value value--tnums value--small">{{bedroom}}</span>
+          <span class="label">Makuuhuone</span>
+        </div>
+      </div>
+      <div class="item">
+        <div class="meta"></div>
+        <div class="content">
+          <span class="value value--tnums value--small">{{study}}</span>
+          <span class="label">Auroran huone</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="layout layout--col gap--space-between">
+    <div class="item">
+      <div class="meta"></div>
+      <div class="content">
+        <span class="value value--tnums value--large">{{mokki_outside}}</span>
+        <span class="label">Mökki ulkona</span>
+      </div>
+    </div>
+    <div class="w-full b-h-gray-5"></div>
+    <div class="item">
+      <div class="meta"></div>
+      <div class="content">
+        <span class="value value--tnums value--large">{{mokki_inside}}</span>
+        <span class="label">Mökki olohuone</span>
+      </div>
+    </div>
+    <div class="w-full b-h-gray-5"></div>
+    <div class="item">
+      <div class="meta"></div>
+      <div class="content">
+        <span class="value value--tnums value--large">{{mokki_basement}}</span>
+        <span class="label">Mökki kellari</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="title_bar">
+  <img class="image" src="https://usetrmnl.com/images/plugins/trmnl--render.svg">
+  <span class="title">{{plugin_name}}</span>
+  <span class="instance">Lämpötila koti &mdash; {{updated_at}}</span>
+</div>
+"""
+
+MARKUP_HALF_VERTICAL = """\
 <div class="layout layout--col gap--space-between">
   <div class="item">
     <div class="meta"></div>
@@ -53,10 +128,78 @@ MARKUP_TEMPLATE = """\
 <div class="title_bar">
   <img class="image" src="https://usetrmnl.com/images/plugins/trmnl--render.svg">
   <span class="title">{{plugin_name}}</span>
-  <span class="instance">Lämpötila koti</span>
+  <span class="instance">Lämpötila koti &mdash; {{updated_at}}</span>
 </div>
 """
 
+MARKUP_HALF_HORIZONTAL = """\
+<div class="layout gap--space-between">
+  <div class="item">
+    <div class="meta"></div>
+    <div class="content">
+      <span class="value value--tnums value--large" data-value-format="true">{{outside}}</span>
+      <span class="label">Ulkona</span>
+    </div>
+  </div>
+  <div class="item">
+    <div class="meta"></div>
+    <div class="content">
+      <span class="value value--tnums value--large">{{livingroom}}</span>
+      <span class="label">Olohuone</span>
+    </div>
+  </div>
+  <div class="item">
+    <div class="meta"></div>
+    <div class="content">
+      <span class="value value--tnums value--large">{{bedroom}}</span>
+      <span class="label">Makuuhuone</span>
+    </div>
+  </div>
+  <div class="item">
+    <div class="meta"></div>
+    <div class="content">
+      <span class="value value--tnums value--large">{{study}}</span>
+      <span class="label">Auroran huone</span>
+    </div>
+  </div>
+</div>
+
+<div class="title_bar">
+  <img class="image" src="https://usetrmnl.com/images/plugins/trmnl--render.svg">
+  <span class="title">{{plugin_name}}</span>
+  <span class="instance">Lämpötila koti &mdash; {{updated_at}}</span>
+</div>
+"""
+
+MARKUP_QUARTER = """\
+<div class="layout layout--col gap--space-between">
+  <div class="item">
+    <div class="meta"></div>
+    <div class="content">
+      <span class="value value--tnums value--large" data-value-format="true">{{outside}}</span>
+      <span class="label">Ulkona</span>
+    </div>
+  </div>
+  <div class="w-full b-h-gray-5"></div>
+  <div class="item">
+    <div class="meta"></div>
+    <div class="content">
+      <span class="value value--tnums value--small">{{livingroom}}</span>
+      <span class="label">Olohuone</span>
+    </div>
+  </div>
+</div>
+
+<div class="title_bar">
+  <img class="image" src="https://usetrmnl.com/images/plugins/trmnl--render.svg">
+  <span class="title">{{plugin_name}}</span>
+  <span class="instance">Lämpötila koti &mdash; {{updated_at}}</span>
+</div>
+"""
+
+# ---------------------------------------------------------------------------
+# Core logic
+# ---------------------------------------------------------------------------
 
 def get_measurements():
     headers = {"Authorization": "Bearer " + RUUVI_TOKEN}
@@ -77,13 +220,25 @@ def fmt(value):
     return f"{value:.1f}°"
 
 
-def build_markup(sensors):
-    markup = MARKUP_TEMPLATE
-    markup = markup.replace("{{outside}}", fmt(sensors["Terrace"]["temperature"]))
-    markup = markup.replace("{{livingroom}}", fmt(sensors["Living room"]["temperature"]))
-    markup = markup.replace("{{bedroom}}", fmt(sensors["Bedroom"]["temperature"]))
-    markup = markup.replace("{{study}}", fmt(sensors["Outside"]["temperature"]))
-    markup = markup.replace("{{plugin_name}}", PLUGIN_NAME)
+def get_template_vars(sensors):
+    now = datetime.datetime.now().strftime("%H:%M")
+    return {
+        "outside":        fmt(sensors["Terrace"]["temperature"]),
+        "livingroom":     fmt(sensors["Living room"]["temperature"]),
+        "bedroom":        fmt(sensors["Bedroom"]["temperature"]),
+        "study":          fmt(sensors["Outside"]["temperature"]),
+        "mokki_outside":  fmt(sensors["Mökki ulkona"]["temperature"]),
+        "mokki_inside":   fmt(sensors["Mökki olohuone"]["temperature"]),
+        "mokki_basement": fmt(sensors["Mökki kellari"]["temperature"]),
+        "plugin_name":    PLUGIN_NAME,
+        "updated_at":     now,
+    }
+
+
+def build_markup(template, sensors):
+    markup = template
+    for key, value in get_template_vars(sensors).items():
+        markup = markup.replace("{{" + key + "}}", value)
     return markup
 
 
@@ -91,9 +246,13 @@ def handler(event, context):
     sensors = get_measurements()
     logger.info("Fetched sensors: %s", list(sensors.keys()))
 
-    markup = build_markup(sensors)
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps({"markup": markup}),
+        "body": json.dumps({
+            "markup":                 build_markup(MARKUP_FULL, sensors),
+            "markup_half_horizontal": build_markup(MARKUP_HALF_HORIZONTAL, sensors),
+            "markup_half_vertical":   build_markup(MARKUP_HALF_VERTICAL, sensors),
+            "markup_quarter":         build_markup(MARKUP_QUARTER, sensors),
+        }),
     }

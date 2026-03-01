@@ -2,9 +2,8 @@
 """
 Local preview server for the TRMNL markup.
 
-Fetches live sensor data from the Ruuvi API on each request and renders
-the markup inside a browser page styled to approximate the TRMNL e-ink
-display (800×480). Reload the page to refresh the data.
+Fetches live sensor data from the Ruuvi API once per request and renders
+all three view sizes on a single page so you can compare them side by side.
 
 Credentials are loaded from config.py if present, otherwise from the
 RUUVI_TOKEN environment variable.
@@ -20,8 +19,6 @@ import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Load credentials before importing lambda_function, which reads them at
-# module load time.
 def _load_credentials():
     if os.environ.get("RUUVI_TOKEN"):
         return True
@@ -49,41 +46,58 @@ PAGE = """\
   <meta charset="utf-8">
   <title>TRMNL Preview</title>
   <style>
-    /* --- Page chrome -------------------------------------------------- */
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
     body {{
       background: #c8c8c8;
       min-height: 100vh;
+      padding: 32px 24px;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      gap: 16px;
-      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      gap: 40px;
     }}
 
+    /* --- Toolbar -------------------------------------------------------- */
     .toolbar {{
-      color: #444;
-      font-size: 13px;
       display: flex;
       align-items: center;
       gap: 12px;
+      background: rgba(255,255,255,0.6);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      color: #333;
+      align-self: stretch;
+      justify-content: space-between;
     }}
     .toolbar a {{
       color: #222;
       text-decoration: none;
-      border: 1px solid #888;
-      border-radius: 4px;
-      padding: 3px 10px;
-      background: #eee;
+      border: 1px solid #aaa;
+      border-radius: 5px;
+      padding: 4px 12px;
     }}
-    .toolbar a:hover {{ background: #ddd; }}
+    .toolbar a:hover {{ background: rgba(0,0,0,0.1); }}
 
-    /* Simulated e-ink screen */
+    /* --- View section -------------------------------------------------- */
+    .view-section {{
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }}
+    .view-label {{
+      font-size: 12px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }}
+
+    /* --- Simulated e-ink screens --------------------------------------- */
     .screen {{
-      width: 800px;
-      height: 480px;
       background: #fff;
       border: 2px solid #555;
       border-radius: 4px;
@@ -91,19 +105,25 @@ PAGE = """\
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      padding: 20px 20px 12px;
       color: #000;
     }}
+    .screen-full             {{ width: 800px; height: 480px; padding: 20px 20px 12px; }}
+    .screen-half-horizontal  {{ width: 800px; height: 240px; padding: 14px 20px 10px; }}
+    .screen-half-vertical    {{ width: 400px; height: 480px; padding: 20px 20px 12px; }}
+    .screen-quarter          {{ width: 400px; height: 240px; padding: 14px 14px 10px; }}
 
-    /* --- TRMNL CSS approximation -------------------------------------- */
-
+    /* --- TRMNL CSS approximation --------------------------------------- */
     .screen .layout {{
       display: flex;
       flex: 1;
       min-height: 0;
+      min-width: 0;
     }}
-    .screen .layout--col   {{ flex-direction: column; }}
+    .screen .layout--col        {{ flex-direction: column; }}
     .screen .gap--space-between {{ justify-content: space-between; }}
+
+    /* Side-by-side columns in the full view each take equal width */
+    .screen .layout > .layout {{ flex: 1; }}
 
     .screen .item {{
       display: flex;
@@ -119,23 +139,32 @@ PAGE = """\
       font-variant-numeric: tabular-nums;
       letter-spacing: -0.02em;
     }}
-    .screen .value--xxlarge {{ font-size: 96px; }}
-    .screen .value--large   {{ font-size: 64px; }}
-    .screen .value--small   {{ font-size: 44px; }}
+
+    /* Font sizes per screen class */
+    .screen-full .value--xxlarge, .screen-half-vertical .value--xxlarge {{ font-size: 88px; }}
+    .screen-full .value--large,   .screen-half-vertical .value--large   {{ font-size: 56px; }}
+    .screen-full .value--small,   .screen-half-vertical .value--small   {{ font-size: 36px; }}
+    .screen-half-horizontal .value--xxlarge {{ font-size: 72px; }}
+    .screen-half-horizontal .value--large   {{ font-size: 48px; }}
+    .screen-half-horizontal .value--small   {{ font-size: 32px; }}
+    .screen-quarter .value--xxlarge {{ font-size: 60px; }}
+    .screen-quarter .value--large   {{ font-size: 44px; }}
+    .screen-quarter .value--small   {{ font-size: 28px; }}
 
     .screen .label {{
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 400;
-      color: #444;
+      color: #555;
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }}
+    .screen-quarter .label {{ font-size: 11px; }}
 
-    .screen .w-full        {{ width: 100%; }}
-    .screen .b-h-gray-5    {{ border-top: 1px solid #bbb; }}
+    .screen .w-full     {{ width: 100%; }}
+    .screen .b-h-gray-5 {{ border-top: 1px solid #ccc; }}
 
-    .screen .grid           {{ display: grid; }}
-    .screen .grid--cols-2   {{ grid-template-columns: 1fr 1fr; }}
+    .screen .grid         {{ display: grid; }}
+    .screen .grid--cols-2 {{ grid-template-columns: 1fr 1fr; }}
 
     /* Title bar */
     .screen .title_bar {{
@@ -148,21 +177,36 @@ PAGE = """\
       font-size: 12px;
       flex-shrink: 0;
     }}
-    .screen .title_bar .image {{
-      width: 20px;
-      height: 20px;
-    }}
+    .screen-quarter .title_bar {{ font-size: 10px; padding-top: 6px; margin-top: 6px; }}
+    .screen .title_bar .image    {{ width: 18px; height: 18px; }}
     .screen .title_bar .title    {{ font-weight: 600; }}
-    .screen .title_bar .instance {{ margin-left: auto; color: #555; }}
+    .screen .title_bar .instance {{ margin-left: auto; color: #666; }}
   </style>
 </head>
 <body>
   <div class="toolbar">
-    <span>TRMNL preview &mdash; 800&times;480</span>
+    <span>TRMNL Preview &mdash; all views</span>
     <a href="/">&#8635; Refresh</a>
   </div>
-  <div class="screen">
-    {markup}
+
+  <div class="view-section">
+    <span class="view-label">Full &mdash; 800&times;480 &mdash; key: <code>markup</code></span>
+    <div class="screen screen-full">{markup_full}</div>
+  </div>
+
+  <div class="view-section">
+    <span class="view-label">Half-horizontal &mdash; 800&times;240 &mdash; key: <code>markup_half_horizontal</code></span>
+    <div class="screen screen-half-horizontal">{markup_half_horizontal}</div>
+  </div>
+
+  <div class="view-section">
+    <span class="view-label">Half-vertical &mdash; 400&times;480 &mdash; key: <code>markup_half_vertical</code></span>
+    <div class="screen screen-half-vertical">{markup_half_vertical}</div>
+  </div>
+
+  <div class="view-section">
+    <span class="view-label">Quarter &mdash; 400&times;240 &mdash; key: <code>markup_quarter</code></span>
+    <div class="screen screen-quarter">{markup_quarter}</div>
   </div>
 </body>
 </html>
@@ -193,8 +237,13 @@ class PreviewHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             sensors = lambda_function.get_measurements()
-            markup = lambda_function.build_markup(sensors)
-            self._respond(200, PAGE.format(markup=markup))
+            html = PAGE.format(
+                markup_full=lambda_function.build_markup(lambda_function.MARKUP_FULL, sensors),
+                markup_half_horizontal=lambda_function.build_markup(lambda_function.MARKUP_HALF_HORIZONTAL, sensors),
+                markup_half_vertical=lambda_function.build_markup(lambda_function.MARKUP_HALF_VERTICAL, sensors),
+                markup_quarter=lambda_function.build_markup(lambda_function.MARKUP_QUARTER, sensors),
+            )
+            self._respond(200, html)
         except Exception as e:
             self._respond(500, ERROR_PAGE.format(error=e))
 
@@ -213,6 +262,7 @@ class PreviewHandler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     server = HTTPServer(("", PORT), PreviewHandler)
     print(f"Preview server running → http://localhost:{PORT}")
+    print("All three view sizes are shown on a single page.")
     print("Each page load fetches fresh data from the Ruuvi API.")
     print("Press Ctrl+C to stop.\n")
     try:
