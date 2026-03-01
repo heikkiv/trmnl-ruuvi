@@ -1,6 +1,14 @@
 """
-Configuration file for the Ruuvi measurement updater.
-Copy this file to config.py and update with your credentials.
+Configuration file for local development with measurement_updater.py.
+Copy this file to config.py and fill in your credentials.
+
+For the Lambda function (lambda_function.py), set these as Lambda
+environment variables instead:
+
+  RUUVI_TOKEN     - Ruuvi Network API bearer token
+  TRMNL_URL       - TRMNL custom plugin webhook URL
+  RUUVI_API_URL   - (optional) Override Ruuvi API URL
+  PLUGIN_NAME     - (optional) Plugin title shown in the title bar, default "Ruuvi"
 """
 
 # TRMNL API endpoint

@@ -30,6 +30,12 @@ config.py
 # Claude AI tool settings
 .claude/
 
+# Lambda build artifacts
+lambda_package/
+.lambda_package/
+lambda_deployment.zip
+lambda.zip
+
 # OS specific files
 .DS_Store
 Thumbs.db
