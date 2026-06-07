@@ -18,6 +18,7 @@ Then open http://localhost:8080 in your browser.
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 
 def _load_credentials():
     if os.environ.get("RUUVI_TOKEN"):
@@ -110,9 +111,17 @@ PAGE = """\
     .screen-full             {{ width: 800px; height: 480px; padding: 20px 20px 12px; }}
     .screen-half-horizontal  {{ width: 800px; height: 240px; padding: 14px 20px 10px; }}
     .screen-half-vertical    {{ width: 400px; height: 480px; padding: 20px 20px 12px; }}
-    .screen-quarter          {{ width: 400px; height: 240px; padding: 14px 14px 10px; }}
+    .screen-quadrant         {{ width: 400px; height: 240px; padding: 14px 14px 10px; }}
 
     /* --- TRMNL CSS approximation --------------------------------------- */
+    .screen .view {{
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      min-width: 0;
+      width: 100%;
+    }}
     .screen .layout {{
       display: flex;
       flex: 1;
@@ -147,9 +156,9 @@ PAGE = """\
     .screen-half-horizontal .value--xxlarge {{ font-size: 72px; }}
     .screen-half-horizontal .value--large   {{ font-size: 48px; }}
     .screen-half-horizontal .value--small   {{ font-size: 32px; }}
-    .screen-quarter .value--xxlarge {{ font-size: 60px; }}
-    .screen-quarter .value--large   {{ font-size: 44px; }}
-    .screen-quarter .value--small   {{ font-size: 28px; }}
+    .screen-quadrant .value--xxlarge {{ font-size: 60px; }}
+    .screen-quadrant .value--large   {{ font-size: 44px; }}
+    .screen-quadrant .value--small   {{ font-size: 28px; }}
 
     .screen .label {{
       font-size: 13px;
@@ -158,7 +167,7 @@ PAGE = """\
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }}
-    .screen-quarter .label {{ font-size: 11px; }}
+    .screen-quadrant .label {{ font-size: 11px; }}
 
     .screen .w-full     {{ width: 100%; }}
     .screen .b-h-gray-5 {{ border-top: 1px solid #ccc; }}
@@ -177,7 +186,7 @@ PAGE = """\
       font-size: 12px;
       flex-shrink: 0;
     }}
-    .screen-quarter .title_bar {{ font-size: 10px; padding-top: 6px; margin-top: 6px; }}
+    .screen-quadrant .title_bar {{ font-size: 10px; padding-top: 6px; margin-top: 6px; }}
     .screen .title_bar .image    {{ width: 18px; height: 18px; }}
     .screen .title_bar .title    {{ font-weight: 600; }}
     .screen .title_bar .instance {{ margin-left: auto; color: #666; }}
@@ -205,8 +214,8 @@ PAGE = """\
   </div>
 
   <div class="view-section">
-    <span class="view-label">Quarter &mdash; 400&times;240 &mdash; key: <code>markup_quarter</code></span>
-    <div class="screen screen-quarter">{markup_quarter}</div>
+    <span class="view-label">Quadrant &mdash; 400&times;240 &mdash; key: <code>markup_quadrant</code></span>
+    <div class="screen screen-quadrant">{markup_quadrant}</div>
   </div>
 </body>
 </html>
@@ -236,12 +245,15 @@ ERROR_PAGE = """\
 class PreviewHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
+            query = parse_qs(urlparse(self.path).query)
+            tz_name = query.get("tz", [lambda_function.DEFAULT_TZ])[0]
+            tz = lambda_function.resolve_tz(tz_name)
             sensors = lambda_function.get_measurements()
             html = PAGE.format(
-                markup_full=lambda_function.build_markup(lambda_function.MARKUP_FULL, sensors),
-                markup_half_horizontal=lambda_function.build_markup(lambda_function.MARKUP_HALF_HORIZONTAL, sensors),
-                markup_half_vertical=lambda_function.build_markup(lambda_function.MARKUP_HALF_VERTICAL, sensors),
-                markup_quarter=lambda_function.build_markup(lambda_function.MARKUP_QUARTER, sensors),
+                markup_full=lambda_function.build_markup(lambda_function.MARKUP_FULL, sensors, tz),
+                markup_half_horizontal=lambda_function.build_markup(lambda_function.MARKUP_HALF_HORIZONTAL, sensors, tz),
+                markup_half_vertical=lambda_function.build_markup(lambda_function.MARKUP_HALF_VERTICAL, sensors, tz),
+                markup_quadrant=lambda_function.build_markup(lambda_function.MARKUP_QUADRANT, sensors, tz),
             )
             self._respond(200, html)
         except Exception as e:
